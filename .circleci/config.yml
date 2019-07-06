@@ -16,7 +16,7 @@ jobs:
           root: ~/repo
           paths: ['.']
   test:
-    parallelism: 3
+    parallelism: 4
     docker:
       - image: circleci/node:8-browsers
     working_directory: ~/repo
@@ -31,6 +31,45 @@ jobs:
             JEST_JUNIT_CLASSNAME: '{filepath}'
       - store_test_results:
           path: ~/repo/reports
+  test-ie11:
+    docker:
+      - image: circleci/node:8-browsers
+    working_directory: ~/repo
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Test in ie11
+          command: 'if [[ ! -z $BROWSERSTACK_USERNAME ]]; then yarn testall test/integration/production/; else echo "Not running for PR"; fi'
+          environment:
+            BROWSERSTACK: 'true'
+            BROWSER_NAME: 'ie'
+  test-safari:
+    docker:
+      - image: circleci/node:8-browsers
+    working_directory: ~/repo
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Test in Safari
+          command: 'if [[ ! -z $BROWSERSTACK_USERNAME ]]; then yarn testall test/integration/production/; else echo "Not running for PR"; fi'
+          environment:
+            BROWSERSTACK: 'true'
+            BROWSER_NAME: 'safari'
+  test-firefox:
+    docker:
+      - image: circleci/node:8-browsers
+    working_directory: ~/repo
+    steps:
+      - attach_workspace:
+          at: .
+      - run:
+          name: Test in Firefox
+          command: 'if [[ ! -z $BROWSERSTACK_USERNAME ]]; then yarn testall test/integration/production/; else echo "Not running for PR"; fi'
+          environment:
+            BROWSERSTACK: 'true'
+            BROWSER_NAME: 'firefox'
   deploy:
     docker:
       - image: circleci/node:8-browsers
@@ -55,6 +94,40 @@ workflows:
       - test:
           requires:
             - build
+      - test-ie11:
+          requires:
+            - build
+          filters:
+            branches:
+              only:
+                - master
+                - canary
+      - test-safari:
+          requires:
+            - build
+            - test
+            - test-ie11
+          filters:
+            branches:
+              only:
+                - master
+                - canary
+      - test-firefox:
+          requires:
+            - build
+            - test
+            - test-ie11
+            - test-safari
+          filters:
+            branches:
+              only:
+                - master
+                - canary
       - deploy:
           requires:
             - test
+          filters:
+            branches:
+              only:
+                - master
+                - canary

@@ -1,5 +1,4 @@
 import { normalizePagePath } from './normalize-page-path'
-import { tryAmp } from './require'
 
 export type BuildManifest = {
   devFiles: string[],
@@ -11,9 +10,6 @@ export type BuildManifest = {
 export function getPageFiles(buildManifest: BuildManifest, page: string): string[] {
   const normalizedPage = normalizePagePath(page)
   const files = buildManifest.pages[normalizedPage]
-  if (!files) {
-    page = tryAmp(buildManifest.pages, normalizedPage)
-  }
 
   if (!files) {
     // tslint:disable-next-line

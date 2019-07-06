@@ -1,5 +1,6 @@
 /* eslint-env jest */
 /* global jasmine, test */
+import webdriver from 'next-webdriver'
 import { join } from 'path'
 import { existsSync } from 'fs'
 import {
@@ -8,7 +9,6 @@ import {
   renderViaHTTP
 } from 'next-test-utils'
 import startServer from '../server'
-import webdriver from 'next-webdriver'
 import fetch from 'node-fetch'
 
 const appDir = join(__dirname, '../')
@@ -42,6 +42,23 @@ describe('Serverless', () => {
   it('should render 404', async () => {
     const html = await renderViaHTTP(appPort, '/404')
     expect(html).toMatch(/This page could not be found/)
+  })
+
+  it('should render an AMP page', async () => {
+    const html = await renderViaHTTP(appPort, '/amp')
+    expect(html).toMatch(/Hi Im an AMP page/)
+    expect(html).toMatch(/ampproject\.org/)
+  })
+
+  it('should have correct amphtml rel link', async () => {
+    const html = await renderViaHTTP(appPort, '/amp')
+    expect(html).toMatch(/Hi Im an AMP page/)
+    expect(html).toMatch(/rel="amphtml" href="\/amp\?amp=1"/)
+  })
+
+  it('should have correct canonical link', async () => {
+    const html = await renderViaHTTP(appPort, '/amp?amp=1')
+    expect(html).toMatch(/rel="canonical" href="\/amp"/)
   })
 
   it('should render correctly when importing isomorphic-unfetch', async () => {

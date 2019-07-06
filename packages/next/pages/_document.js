@@ -1,6 +1,6 @@
 /* eslint-disable */
-import React, { Component } from 'react'
 import PropTypes from 'prop-types'
+import React, { Component } from 'react'
 import { cleanAmpPath } from 'next-server/dist/server/utils'
 import { htmlEscapeJsonString } from '../server/htmlescape'
 import flush from 'styled-jsx/server'
@@ -9,16 +9,21 @@ import {
   CLIENT_STATIC_FILES_RUNTIME_WEBPACK,
 } from 'next-server/constants'
 
+function getAmpPath(ampPath, asPath) {
+  return ampPath ? ampPath
+    : `${asPath}${asPath.includes('?') ? '&' : '?'}amp=1`
+}
+
 export default class Document extends Component {
   static childContextTypes = {
     _documentProps: PropTypes.any,
     _devOnlyInvalidateCacheQueryString: PropTypes.string,
   }
 
-  static getInitialProps({ renderPage }) {
-    const { html, head } = renderPage()
+  static async getInitialProps({ renderPage }) {
+    const { html, head, dataOnly } = await renderPage()
     const styles = flush()
-    return { html, head, styles }
+    return { html, head, styles, dataOnly }
   }
 
   getChildContext() {
@@ -148,16 +153,17 @@ export class Head extends Component {
 
   render() {
     const {
-      ampEnabled,
       styles,
       amphtml,
       hasAmp,
       ampPath,
       assetPrefix,
       __NEXT_DATA__,
+      dangerousAsPath,
     } = this.context._documentProps
     const { _devOnlyInvalidateCacheQueryString } = this.context
-    const { page, buildId } = __NEXT_DATA__
+    const { page, buildId, dynamicBuildId } = __NEXT_DATA__
+    const isDirtyAmp = amphtml && !__NEXT_DATA__.query.amp
 
     let { head } = this.context._documentProps
     let children = this.props.children
@@ -186,6 +192,20 @@ export class Head extends Component {
         badProp = 'name="viewport"'
       } else if (type === 'link' && props.rel === 'canonical') {
         badProp = 'rel="canonical"'
+      } else if (type === 'script') {
+        // only block if 
+        // 1. it has a src and isn't pointing to ampproject's CDN
+        // 2. it is using dangerouslySetInnerHTML without a type or
+        // a type of text/javascript
+        if ((props.src && props.src.indexOf('ampproject') < -1) ||
+          (props.dangerouslySetInnerHTML && (!props.type || props.type === 'text/javascript'))
+        ) {
+          badProp = '<script'
+          Object.keys(props).forEach(prop => {
+            badProp += ` ${prop}="${props[prop]}"`
+          })
+          badProp += '/>'
+        }
       }
 
       if (badProp) {
@@ -204,7 +224,8 @@ export class Head extends Component {
               name="viewport"
               content="width=device-width,minimum-scale=1,initial-scale=1"
             />
-            <link rel="canonical" href={cleanAmpPath(page)} />
+            <link rel="canonical" href={cleanAmpPath(dangerousAsPath)} />
+            {isDirtyAmp && <link rel="amphtml" href={getAmpPath(ampPath, dangerousAsPath)} />}
             {/* https://www.ampproject.org/docs/fundamentals/optimize_amp#optimize-the-amp-runtime-loading */}
             <link
               rel="preload"
@@ -243,13 +264,17 @@ export class Head extends Component {
         )}
         {!amphtml && (
           <>
-            {ampEnabled && hasAmp && <link rel="amphtml" href={ampPath ? ampPath : `${page}?amp=1`} />}
+            {hasAmp && <link rel="amphtml" href={getAmpPath(ampPath, dangerousAsPath)} />}
             {page !== '/_error' && (
               <link
                 rel="preload"
-                href={`${assetPrefix}/_next/static/${buildId}/pages${getPagePathname(
-                  page
-                )}${_devOnlyInvalidateCacheQueryString}`}
+                href={
+                  assetPrefix +
+                  (dynamicBuildId
+                    ? `/_next/static/client/pages${getPageFile(page, buildId)}`
+                    : `/_next/static/${buildId}/pages${getPageFile(page)}`) +
+                  _devOnlyInvalidateCacheQueryString
+                }
                 as="script"
                 nonce={this.props.nonce}
                 crossOrigin={this.props.crossOrigin || process.crossOrigin}
@@ -257,7 +282,13 @@ export class Head extends Component {
             )}
             <link
               rel="preload"
-              href={`${assetPrefix}/_next/static/${buildId}/pages/_app.js${_devOnlyInvalidateCacheQueryString}`}
+              href={
+                assetPrefix +
+                (dynamicBuildId
+                  ? `/_next/static/client/pages/_app.${buildId}.js`
+                  : `/_next/static/${buildId}/pages/_app.js`) +
+                _devOnlyInvalidateCacheQueryString
+              }
               as="script"
               nonce={this.props.nonce}
               crossOrigin={this.props.crossOrigin || process.crossOrigin}
@@ -408,7 +439,7 @@ export class NextScript extends Component {
       )
     }
 
-    const { page, buildId } = __NEXT_DATA__
+    const { page, buildId, dynamicBuildId } = __NEXT_DATA__
 
     if (process.env.NODE_ENV !== 'production') {
       if (this.props.crossOrigin)
@@ -446,9 +477,13 @@ export class NextScript extends Component {
           <script
             async
             id={`__NEXT_PAGE__${page}`}
-            src={`${assetPrefix}/_next/static/${buildId}/pages${getPagePathname(
-              page
-            )}${_devOnlyInvalidateCacheQueryString}`}
+            src={
+              assetPrefix +
+              (dynamicBuildId
+                ? `/_next/static/client/pages${getPageFile(page, buildId)}`
+                : `/_next/static/${buildId}/pages${getPageFile(page)}`) +
+              _devOnlyInvalidateCacheQueryString
+            }
             nonce={this.props.nonce}
             crossOrigin={this.props.crossOrigin || process.crossOrigin}
           />
@@ -456,7 +491,13 @@ export class NextScript extends Component {
         <script
           async
           id={`__NEXT_PAGE__/_app`}
-          src={`${assetPrefix}/_next/static/${buildId}/pages/_app.js${_devOnlyInvalidateCacheQueryString}`}
+          src={
+            assetPrefix +
+            (dynamicBuildId
+              ? `/_next/static/client/pages/_app.${buildId}.js`
+              : `/_next/static/${buildId}/pages/_app.js`) +
+            _devOnlyInvalidateCacheQueryString
+          }
           nonce={this.props.nonce}
           crossOrigin={this.props.crossOrigin || process.crossOrigin}
         />
@@ -467,10 +508,10 @@ export class NextScript extends Component {
   }
 }
 
-function getPagePathname(page) {
+function getPageFile(page, buildId) {
   if (page === '/') {
-    return '/index.js'
+    return buildId ? `/index.${buildId}.js` : '/index.js'
   }
 
-  return `${page}.js`
+  return buildId ? `${page}.${buildId}.js` : `${page}.js`
 }
